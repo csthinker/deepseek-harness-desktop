@@ -1,0 +1,55 @@
+{
+  "name": "dsh-desktop",
+  "version": "0.1.0-rc.6",
+  "private": true,
+  "description": "DeepSeek Harness desktop shell — a native window over the bundled dsh web server; no browser required.",
+  "main": "main.cjs",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "build:server": "node scripts/build-server.mjs",
+    "prepare:node": "node scripts/copy-node.mjs",
+    "archive": "node scripts/archive-server.mjs",
+    "sync:version": "node scripts/sync-version.mjs",
+    "pack": "electron-builder --win portable zip",
+    "dist": "node scripts/build-server.mjs && node scripts/copy-node.mjs && node scripts/archive-server.mjs && electron-builder --win portable zip"
+  },
+  "devDependencies": {
+    "electron": "^43.0.0",
+    "electron-builder": "^26.0.0"
+  },
+  "build": {
+    "appId": "ai.deepseek.dsh.desktop",
+    "productName": "DeepSeek Harness",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.cjs",
+      "package.json"
+    ],
+    "afterPack": "./after-pack.cjs",
+    "icon": "build/icon.png",
+    "win": {
+      "icon": "build/icon.ico",
+      "artifactName": "DeepSeekHarness-${version}-${arch}.${ext}",
+      "target": [
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "portable": {
+      "artifactName": "DeepSeekHarness-${version}-portable.exe"
+    }
+  }
+}

@@ -1,0 +1,134 @@
+name: build-release
+
+on:
+  workflow_dispatch:
+    inputs:
+      force:
+        description: 'Force a build even when the upstream version is unchanged'
+        type: boolean
+        default: false
+  schedule:
+    # Poll upstream every 6 hours; a build runs only when the version moved.
+    - cron: '0 */6 * * *'
+
+permissions:
+  contents: write
+
+jobs:
+  check:
+    name: Check upstream version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.check.outputs.version }}
+      build: ${{ steps.check.outputs.build }}
+    steps:
+      - name: Read upstream version
+        id: upstream
+        run: |
+          VERSION=$(curl -fsSL https://raw.githubusercontent.com/deepseek-ai/deepseek-harness/master/package.json | node -e "let s='';process.stdin.on('data',d=>s+=d);process.stdin.on('end',()=>console.log(JSON.parse(s).version))")
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Upstream version: $VERSION"
+
+      - name: Read our latest release
+        id: ours
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG=$(gh release list --limit 1 --json tagName --jq '.[0].tagName // ""' 2>/dev/null || true)
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "Our latest release: ${TAG:-<none>}"
+
+      - name: Decide whether to build
+        id: check
+        env:
+          UPSTREAM: ${{ steps.upstream.outputs.version }}
+          OURS: ${{ steps.ours.outputs.tag }}
+          FORCE: ${{ github.event.inputs.force }}
+        run: |
+          OURS_CLEAN="${OURS#v}"
+          if [ "${FORCE}" = "true" ] || [ "$UPSTREAM" != "$OURS_CLEAN" ]; then
+            echo "build=true" >> "$GITHUB_OUTPUT"
+            echo "-> build (upstream=$UPSTREAM ours=$OURS_CLEAN force=$FORCE)"
+          else
+            echo "build=false" >> "$GITHUB_OUTPUT"
+            echo "-> skip (upstream=$UPSTREAM already released)"
+          fi
+          echo "version=$UPSTREAM" >> "$GITHUB_OUTPUT"
+
+  build:
+    name: Build and release
+    needs: check
+    if: needs.check.outputs.build == 'true'
+    runs-on: windows-latest
+    steps:
+      - name: Checkout this repository
+        uses: actions/checkout@v4
+
+      - name: Checkout upstream deepseek-harness
+        uses: actions/checkout@v4
+        with:
+          repository: deepseek-ai/deepseek-harness
+          ref: master
+          path: harness
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.7.0
+
+      - name: Install and build the harness
+        shell: pwsh
+        run: |
+          Set-Location harness
+          $env:CI = 'true'
+          pnpm install
+          pnpm run build
+
+      - name: Sync version from harness
+        run: node scripts/sync-version.mjs harness
+
+      - name: Build the server payload
+        run: node scripts/build-server.mjs --harness harness
+
+      - name: Copy the bundled Node executable
+        run: node scripts/copy-node.mjs
+
+      - name: Archive the server payload
+        run: node scripts/archive-server.mjs
+
+      - name: Install desktop dependencies
+        run: npm install
+
+      - name: Package portable exe and zip
+        run: npx electron-builder --win portable zip --publish never
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: |
+            dist/*.exe
+            dist/*.zip
+          if-no-files-found: error
+
+      - name: Publish GitHub release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.check.outputs.version }}
+        run: |
+          $tag = "v$env:VERSION"
+          $files = Get-ChildItem dist -File | Where-Object { $_.Extension -in '.exe', '.zip' } | ForEach-Object { $_.FullName }
+          $title = "DeepSeek Harness Desktop v$env:VERSION"
+          $notes = "Automated build of [deepseek-ai/deepseek-harness](https://github.com/deepseek-ai/deepseek-harness) v$env:VERSION.`n`n- `DeepSeekHarness-$env:VERSION-portable.exe` — double-click to run.`n- `*-x64.zip` — extract and run."
+          $prerelease = if ($env:VERSION -match '-') { '--prerelease' } else { '' }
+          if (gh release view $tag --json id 2>$null) {
+            gh release upload $tag $files --clobber
+          } else {
+            gh release create $tag $files --title $title --notes $notes $prerelease
+          }
