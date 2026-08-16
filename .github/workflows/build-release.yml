@@ -13,6 +13,7 @@ on:
 
 permissions:
   contents: write
+  actions: write
 
 jobs:
   check:
@@ -123,12 +124,13 @@ jobs:
           VERSION: ${{ needs.check.outputs.version }}
         run: |
           $tag = "v$env:VERSION"
-          $files = Get-ChildItem dist -File | Where-Object { $_.Extension -in '.exe', '.zip' } | ForEach-Object { $_.FullName }
+          $files = @(Get-ChildItem dist -File | Where-Object { $_.Extension -in '.exe', '.zip' } | ForEach-Object { $_.FullName })
           $title = "DeepSeek Harness Desktop v$env:VERSION"
           $notes = "Automated build of [deepseek-ai/deepseek-harness](https://github.com/deepseek-ai/deepseek-harness) v$env:VERSION.`n`n- `DeepSeekHarness-$env:VERSION-portable.exe` — double-click to run.`n- `*-x64.zip` — extract and run."
-          $prerelease = if ($env:VERSION -match '-') { '--prerelease' } else { '' }
-          if (gh release view $tag --json id 2>$null) {
-            gh release upload $tag $files --clobber
+          if (gh release view $tag >$null 2>&1) {
+            gh release upload $tag @files --clobber
           } else {
-            gh release create $tag $files --title $title --notes $notes $prerelease
+            $args = @('release', 'create', $tag) + $files + @('--title', $title, '--notes', $notes)
+            if ($env:VERSION -match '-') { $args += '--prerelease' }
+            gh @args
           }
