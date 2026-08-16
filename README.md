@@ -10,6 +10,8 @@ machine needs no Node.js installation.
 > This repository — the Electron shell, the payload build pipeline, the CI
 > workflow, and this README — was produced end to end by an agent running
 > inside DeepSeek Harness (`dsh`).
+>
+> See the [build process record](process-imgs/process.md) for screenshots and cost.
 
 ## Downloads
 
@@ -128,6 +130,8 @@ Windows 桌面程序，双击即可在原生窗口中使用，**无需 `npx` 命
 
 > 本仓库（Electron 外壳、载荷构建脚本、CI 工作流、本 README）**全程由
 > DeepSeek Harness（`dsh`）中的 agent 完成**。
+>
+> 构建过程截图与花费见 [构建过程记录](process-imgs/process.md)。
 
 每次 Release 提供两种产物：`-portable.exe`（双击即用）与 `-win64.zip`
 （解压即用）。构建流程见上文；CI 会每 6 小时监控上游版本，版本更新时自动编译
